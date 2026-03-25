@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MD Stripper</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,700;1,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink: #1a1208;
+    --paper: #f5f0e8;
+    --aged: #e8dfcc;
+    --rust: #c0392b;
+    --gold: #b8860b;
+    --muted: #7a6e5f;
+    --border: #c8bfa8;
+  }
+
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0.6;
+  }
+
+  header {
+    padding: 2.5rem 3rem 1.5rem;
+    border-bottom: 2px solid var(--ink);
+    display: flex;
+    align-items: baseline;
+    gap: 1.5rem;
+    background: var(--paper);
+  }
+
+  header h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  header h1 em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--rust);
+  }
+
+  header p {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    border-left: 1px solid var(--border);
+    padding-left: 1.5rem;
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid var(--ink);
+    min-height: calc(100vh - 90px);
+  }
+
+  .pane:last-child { border-right: none; }
+
+  .pane-header {
+    padding: 0.9rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--aged);
+  }
+
+  .pane-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-weight: 500;
+    color: var(--muted);
+  }
+
+  .pane-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  /* Input pane */
+  .input-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  #md-input {
+    flex: 1;
+    width: 100%;
+    padding: 1.5rem;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--ink);
+    line-height: 1.7;
+    caret-color: var(--rust);
+  }
+
+  #md-input::placeholder {
+    color: var(--border);
+  }
+
+  /* Drop zone */
+  .drop-zone {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background: var(--paper);
+    border: 2px dashed var(--border);
+    margin: 1rem;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .drop-zone.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .drop-zone.hovering {
+    border-color: var(--rust);
+    background: #fdf8f2;
+  }
+
+  .drop-zone-icon {
+    font-size: 2rem;
+    opacity: 0.3;
+  }
+
+  .drop-zone p {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.6;
+  }
+
+  .drop-zone strong { color: var(--rust); }
+
+  /* Buttons */
+  .btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--ink);
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn:hover {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  .btn-primary {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .btn-primary:hover {
+    background: var(--rust);
+    border-color: var(--rust);
+  }
+
+  .btn-upload {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-upload:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  #file-input { display: none; }
+
+  /* Output pane */
+  .output-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    position: relative;
+  }
+
+  #plain-output {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.8;
+    color: var(--ink);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    min-height: 100%;
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 0.5rem;
+    color: var(--border);
+    font-size: 0.72rem;
+    text-align: center;
+    letter-spacing: 0.08em;
+    padding: 3rem;
+  }
+
+  .empty-state-glyph {
+    font-family: 'Fraunces', serif;
+    font-size: 4rem;
+    font-weight: 300;
+    font-style: italic;
+    color: var(--aged);
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Copy feedback */
+  .copy-feedback {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(1rem);
+    background: var(--ink);
+    color: var(--paper);
+    padding: 0.6rem 1.4rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: all 0.3s;
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  .copy-feedback.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* Options bar */
+  .options-bar {
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--aged);
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .option-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    margin-right: -0.5rem;
+  }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .toggle input { display: none; }
+
+  .toggle-box {
+    width: 28px;
+    height: 16px;
+    border: 1px solid var(--border);
+    background: transparent;
+    position: relative;
+    transition: all 0.2s;
+  }
+
+  .toggle-box::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: var(--border);
+    top: 2px;
+    left: 2px;
+    transition: all 0.2s;
+  }
+
+  .toggle input:checked + .toggle-box {
+    border-color: var(--rust);
+    background: var(--rust);
+  }
+
+  .toggle input:checked + .toggle-box::after {
+    background: var(--paper);
+    left: 14px;
+  }
+
+  .toggle span {
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  /* Stats bar */
+  .stats {
+    padding: 0.5rem 1.5rem;
+    border-top: 1px solid var(--border);
+    background: var(--aged);
+    display: flex;
+    gap: 2rem;
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .stats span { display: flex; gap: 0.4rem; }
+  .stats strong { color: var(--ink); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  @media (max-width: 700px) {
+    .workspace { grid-template-columns: 1fr; }
+    .pane { min-height: 50vh; border-right: none; border-bottom: 2px solid var(--ink); }
+    header { padding: 1.5rem; }
+    header p { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MD <em>Stripper</em></h1>
+  <p>Paste or upload markdown → clean plain text for Docs</p>
+</header>
+
+<div class="workspace">
+
+  <!-- INPUT PANE -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-label">Markdown Input</span>
+      <div class="pane-actions">
+        <label class="btn-upload" for="file-input">↑ Upload .md</label>
+        <input type="file" id="file-input" accept=".md,.txt,.markdown">
+        <button class="btn" id="clear-btn">Clear</button>
+      </div>
+    </div>
+    <div class="input-area">
+      <textarea id="md-input" placeholder="Paste your markdown here...
+
+# Heading becomes plain heading
+**Bold** becomes BOLD
+*Italic* stays italic-ish
+- Lists become clean lines
+> Quotes lose the arrow
+`code` loses the ticks
+[links](url) show just text"></textarea>
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-icon">◌</div>
+        <p>Drop your <strong>.md file</strong> here<br>or click to browse</p>
+      </div>
+    </div>
+    <div class="stats" id="input-stats">
+      <span>Words: <strong id="word-count">0</strong></span>
+      <span>Lines: <strong id="line-count">0</strong></span>
+      <span>Chars: <strong id="char-count">0</strong></span>
+    </div>
+  </div>
+
+  <!-- OUTPUT PANE -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-label">Plain Text Output</span>
+      <div class="pane-actions">
+        <button class="btn btn-primary" id="copy-btn">Copy All</button>
+      </div>
+    </div>
+
+    <div class="options-bar">
+      <span class="option-label">Options:</span>
+      <label class="toggle">
+        <input type="checkbox" id="opt-bold" checked>
+        <span class="toggle-box"></span>
+        <span>UPPERCASE bold</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="opt-headings" checked>
+        <span class="toggle-box"></span>
+        <span>Heading markers</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="opt-bullets" checked>
+        <span class="toggle-box"></span>
+        <span>Keep • bullets</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="opt-blank-lines">
+        <span class="toggle-box"></span>
+        <span>Collapse blank lines</span>
+      </label>
+    </div>
+
+    <div class="output-area">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-state-glyph">¶</div>
+        <p>Your clean text will<br>appear here</p>
+      </div>
+      <pre id="plain-output" style="display:none"></pre>
+    </div>
+
+    <div class="stats" id="output-stats">
+      <span>Words: <strong id="out-word-count">0</strong></span>
+      <span>Lines: <strong id="out-line-count">0</strong></span>
+      <span>Chars: <strong id="out-char-count">0</strong></span>
+    </div>
+  </div>
+
+</div>
+
+<div class="copy-feedback" id="copy-feedback">Copied to clipboard</div>
+
+<script>
+  const input = document.getElementById('md-input');
+  const output = document.getElementById('plain-output');
+  const emptyState = document.getElementById('empty-state');
+  const copyBtn = document.getElementById('copy-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  const fileInput = document.getElementById('file-input');
+  const dropZone = document.getElementById('drop-zone');
+  const copyFeedback = document.getElementById('copy-feedback');
+
+  const opts = {
+    bold: document.getElementById('opt-bold'),
+    headings: document.getElementById('opt-headings'),
+    bullets: document.getElementById('opt-bullets'),
+    collapse: document.getElementById('opt-blank-lines'),
+  };
+
+  function stripMarkdown(md) {
+    let text = md;
+
+    // Remove HTML tags
+    text = text.replace(/<[^>]+>/g, '');
+
+    // Horizontal rules
+    text = text.replace(/^[-*_]{3,}\s*$/gm, '────────────────────');
+
+    // Fenced code blocks — keep content, remove fences
+    text = text.replace(/^```[\w]*\n?([\s\S]*?)```/gm, (_, code) => code.trim());
+    text = text.replace(/^~~~[\w]*\n?([\s\S]*?)~~~/gm, (_, code) => code.trim());
+
+    // Headings
+    if (opts.headings.checked) {
+      text = text.replace(/^#{1}\s+(.+)$/gm, '— $1 —');
+      text = text.replace(/^#{2}\s+(.+)$/gm, '• $1');
+      text = text.replace(/^#{3,}\s+(.+)$/gm, '  $1');
+    } else {
+      text = text.replace(/^#{1,6}\s+/gm, '');
+    }
+
+    // Setext headings
+    text = text.replace(/^(.+)\n[=]{3,}$/gm, opts.headings.checked ? '— $1 —' : '$1');
+    text = text.replace(/^(.+)\n[-]{3,}$/gm, opts.headings.checked ? '• $1' : '$1');
+
+    // Blockquotes
+    text = text.replace(/^>\s?/gm, '  ');
+
+    // Bold + italic combined ***text*** or ___text___
+    if (opts.bold.checked) {
+      text = text.replace(/\*{3}(.+?)\*{3}/g, (_, t) => t.toUpperCase());
+      text = text.replace(/_{3}(.+?)_{3}/g, (_, t) => t.toUpperCase());
+    } else {
+      text = text.replace(/\*{3}(.+?)\*{3}/g, '$1');
+      text = text.replace(/_{3}(.+?)_{3}/g, '$1');
+    }
+
+    // Bold **text** or __text__
+    if (opts.bold.checked) {
+      text = text.replace(/\*{2}(.+?)\*{2}/g, (_, t) => t.toUpperCase());
+      text = text.replace(/_{2}(.+?)_{2}/g, (_, t) => t.toUpperCase());
+    } else {
+      text = text.replace(/\*{2}(.+?)\*{2}/g, '$1');
+      text = text.replace(/_{2}(.+?)_{2}/g, '$1');
+    }
+
+    // Italic *text* or _text_
+    text = text.replace(/\*(.+?)\*/g, '$1');
+    text = text.replace(/_(.+?)_/g, '$1');
+
+    // Strikethrough
+    text = text.replace(/~~(.+?)~~/g, '$1');
+
+    // Inline code `code`
+    text = text.replace(/`(.+?)`/g, '$1');
+
+    // Links [text](url) → text
+    text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    // Ref-style links [text][ref] → text
+    text = text.replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1');
+    // Bare links
+    text = text.replace(/\bhttps?:\/\/\S+/g, '[link]');
+
+    // Images ![alt](url) → alt
+    text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+
+    // Unordered lists
+    if (opts.bullets.checked) {
+      text = text.replace(/^[\s]*[-*+]\s+/gm, '• ');
+    } else {
+      text = text.replace(/^[\s]*[-*+]\s+/gm, '  ');
+    }
+
+    // Ordered lists — keep numbers
+    text = text.replace(/^[\s]*(\d+)\.\s+/gm, '$1. ');
+
+    // Task lists
+    text = text.replace(/\[x\]/gi, '[✓]');
+    text = text.replace(/\[ \]/g, '[ ]');
+
+    // Tables — strip pipes, clean up
+    text = text.replace(/^\|(.+)\|$/gm, (_, row) =>
+      row.split('|').map(c => c.trim()).filter(Boolean).join('  |  ')
+    );
+    text = text.replace(/^\|[-: |]+\|$/gm, '');
+
+    // Footnotes
+    text = text.replace(/\[\^[^\]]+\]/g, '');
+
+    // Definition lists
+    text = text.replace(/^:\s+/gm, '  ');
+
+    // Trailing spaces (line breaks)
+    text = text.replace(/  +$/gm, '\n');
+
+    // Collapse multiple blank lines
+    if (opts.collapse.checked) {
+      text = text.replace(/\n{3,}/g, '\n\n');
+    }
+
+    // Trim leading/trailing
+    text = text.trim();
+
+    return text;
+  }
+
+  function updateStats(text, prefix) {
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    const lines = text ? text.split('\n').length : 0;
+    const chars = text.length;
+    document.getElementById(prefix + 'word-count').textContent = words.toLocaleString();
+    document.getElementById(prefix + 'line-count').textContent = lines.toLocaleString();
+    document.getElementById(prefix + 'char-count').textContent = chars.toLocaleString();
+  }
+
+  function process() {
+    const raw = input.value;
+    updateStats(raw, '');
+
+    if (!raw.trim()) {
+      output.style.display = 'none';
+      emptyState.style.display = 'flex';
+      updateStats('', 'out-');
+      return;
+    }
+
+    const cleaned = stripMarkdown(raw);
+    output.textContent = cleaned;
+    output.style.display = 'block';
+    emptyState.style.display = 'none';
+    updateStats(cleaned, 'out-');
+  }
+
+  input.addEventListener('input', process);
+  Object.values(opts).forEach(o => o.addEventListener('change', process));
+
+  // Copy
+  copyBtn.addEventListener('click', async () => {
+    const text = output.textContent;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    copyFeedback.classList.add('show');
+    setTimeout(() => copyFeedback.classList.remove('show'), 2000);
+  });
+
+  // Clear
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    process();
+    input.focus();
+  });
+
+  // File upload
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { input.value = ev.target.result; process(); };
+    reader.readAsText(file);
+    fileInput.value = '';
+  });
+
+  // Drag and drop
+  const inputArea = document.querySelector('.input-area');
+
+  inputArea.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('visible');
+  });
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('hovering');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('visible', 'hovering');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('visible', 'hovering');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { input.value = ev.target.result; process(); };
+    reader.readAsText(file);
+  });
+
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  // Keyboard shortcut
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      copyBtn.click();
+    }
+  });
+</script>
+</body>
+</html>
